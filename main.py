@@ -1,17 +1,99 @@
-from bs4 import BeautifulSoup
+import os
+import json
+import logging
 import requests
+from bs4 import BeautifulSoup
 
-DOWNLOAD_SIZE = 'large'
+logging.basicConfig(level=logging.INFO)
 
-num_items = 50
+BASE_URL = 'https://www.vangoghmuseum.nl'
+JOB_FPATH = 'job.json'
 
-base_url = 'https://www.vangoghmuseum.nl'
 
-url = f'{base_url}/en/search/collection?q=&artist=Vincent%20van%20Gogh&pagesize={num_items}'
+def get_job_details():
+    """
+    Load the job details and do some checks
+    :return:
+    """
+    with open(JOB_FPATH, 'r') as f:
+        job = json.load(f)
+
+    if not os.path.isdir(job['output_dir']):
+        raise FileNotFoundError(job['output_dir'] + 'does not exist')
+
+    if not job['size'] in ['small', 'medium', 'large']:
+        raise NotImplementedError(
+            'size must be one of "small", "medium" or "large". You passed {}'.format(
+                job['size']))
+
+    if job['num_download'] < 0:
+        raise NotImplementedError('Cannot pass num_download < 0')
+
+    logging.info('Job details successfully loaded')
+    return job
+
+
+def get_dl_link(teaser):
+    """
+    get the image download link from a teaser tag
+
+    :param teaser: bs4 tag
+    :return:
+    """
+    logging.info('Parsing content for download link')
+    # Get the link to the content page for this image
+    teaser_href = teaser.attrs['href']
+    content_link = f'{BASE_URL}{teaser_href}'
+
+    # Get download link for image
+    content_soup = BeautifulSoup(requests.get((content_link)).content,
+                                 "html.parser")
+
+    [dl_button] = content_soup.find_all("a", "button", text=job['size'])
+
+    dl_href = dl_button.attrs['href']
+
+    dl_link = f'{BASE_URL}{dl_href}'
+
+    logging.info('Download link found')
+
+    return dl_link
+
+
+def download_img(img_url, title, output_dir):
+    """
+
+    :param img_url:
+    :param title:
+    :param output_dir:
+    :return:
+    """
+    logging.info('Starting image download')
+    image = requests.get(img_url)
+    logging.info('Download done')
+
+    fname = os.path.join(output_dir, f'{title}.jpg')
+
+    if os.path.exists(fname):
+        logging.warning(
+            f'Tried to download {title} but file already existed under {output_dir}.')
+
+    else:
+        logging.info(f'Writing image to {fname}')
+        with open(fname, 'wb') as f:
+            f.write(image.content)
+
+    logging.info(f'{fname} successfully saved.')
 
 if __name__ == '__main__':
 
-    response = requests.get(url)
+    logging.info('Started scraper')
+
+    job = get_job_details()
+
+    PAGE_URL = f'{BASE_URL}/en/search/collection?q=&artist=Vincent%20van%20Gogh&pagesize={job["num_download"]}'
+
+    response = requests.get(PAGE_URL, timeout=20)
 
     soup = BeautifulSoup(response.content, "html.parser")
 
@@ -22,31 +104,11 @@ if __name__ == '__main__':
         title, period = teaser.h3.string.strip().split(',')
         period = period.strip()
 
-        # Get the link to the content page for this image
-        teaser_href = teaser.attrs['href']
-        content_link = f'{base_url}{teaser_href}'
+        logging.info(f'Processing data for: {title}')
 
-        # Get download link for image
-        content_response = requests.get((content_link))
+        dl_link = get_dl_link(teaser)
 
-        content_soup = BeautifulSoup(content_response.content, "html.parser")
-
-        [dl_button] = content_soup.find_all("a", "button", text=DOWNLOAD_SIZE)
-
-        dl_href = dl_button.attrs['href']
-
-        dl_link = f'{base_url}{dl_href}'
-
-        print('\nDownloading:')
-        print(f'Title: {title}')
-        print(f'Period: {period}')
-        image = requests.get(dl_link)
-
-        fname = 'images/{}.jpg'.format(title)
-
-        print('Writing to {}'.format(fname))
-
-        with open(fname, 'wb') as f:
-            f.write(image.content)
+        download_img(dl_link, title, job['output_dir'])
 
         print('done!\n')
+#
