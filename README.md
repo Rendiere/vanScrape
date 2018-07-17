@@ -4,7 +4,7 @@
   <img src="thumb.png"></img>
   <hr>
   <br>
-  <p>A simple web scraper to download all the complete works of Van Gogh, published by the Van Gogh museum.</p>
+  <p>A simple web scraper to download the complete works of Van Gogh, published by the Van Gogh museum.</p>
 </div>
 
 
